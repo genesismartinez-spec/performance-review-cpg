@@ -5,6 +5,7 @@
 <title>Performance Review CPG</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.5.0/fonts/remixicon.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 
 @font-face { font-family: 'Neue Haas Display'; src: url('fonts/NeueHaasDisplayRoman.ttf') format('truetype'); font-weight: 400; font-display: swap; }
@@ -249,6 +250,15 @@ textarea,input{font-family:inherit}
 .pf-pending-card-title{font-size:15px;font-weight:600}
 .pf-pending-card-body{font-size:13px;color:var(--text-sub-600);margin-top:7px;line-height:1.55}
 
+/* ── Editable score pills ── */
+.pf-month-pill{cursor:pointer;transition:opacity 120ms,outline 120ms}
+.pf-month-pill:hover{opacity:0.82;outline:2px solid var(--primary-base);outline-offset:1px}
+.pf-month-pill.editing{padding:0;overflow:hidden;outline:2px solid var(--primary-base);outline-offset:1px}
+.pf-score-input{width:46px;height:100%;border:none;background:transparent;text-align:center;
+  font-size:11.5px;font-weight:600;color:inherit;padding:4px 2px;outline:none}
+.pf-sb-dot{width:5px;height:5px;border-radius:50%;background:var(--orange-500);
+  flex:none;margin-left:2px;margin-top:-6px}
+
 </style>
 </head>
 <body>
@@ -261,9 +271,14 @@ textarea,input{font-family:inherit}
 <script type="text/babel">
 const { useState, useEffect } = React;
 
-// ─── CONFIG — replace with your Apps Script URL ───────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────────────────
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyf1-cN6vbg0at20BTWj-8llDV5S_n4kdE7SQSFg2E3mZ7DK2Mh1x81y5TZgLP0mLexZg/exec';
+const SUPABASE_URL    = 'https://uwftcnjtvwjlufjyyyfh.supabase.co';
+const SUPABASE_KEY    = 'sb_publishable_b3x3Up6jnCHd57IKgnGvJQ_LgDaxux8';
+const SB_TABLE        = 'Performance Review';
 // ──────────────────────────────────────────────────────────────────────────
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const MONTHS_ORDER   = ['April','May','Jun','Jul','Aug','Sept','Oct'];
 const MONTHS_LABEL   = { April:'Apr', May:'May', Jun:'Jun', Jul:'Jul', Aug:'Aug', Sept:'Sep', Oct:'Oct' };
@@ -476,11 +491,39 @@ function AlertsPanel({ pillars, months, L }) {
 }
 
 // ─── Pillar card ─────────────────────────────────────────────────────────────
-function PillarCard({ pillar, months, L }) {
+function PillarCard({ pillar, months, member, sbScores, onSave, L }) {
+  const [editing, setEditing] = useState(null); // 'pillar|skill|month'
+  const [draft,   setDraft]   = useState('');
+
   const cfg = pillarCfg(pillar.name);
   const { title, sub } = parsePillarTitle(pillar.name);
-  const avg = pillarAvg(pillar, months);
+
+  function resolveScore(sk, m) {
+    const key = `${pillar.name}|${sk.name}|${m}`;
+    return sbScores[key] !== undefined ? sbScores[key] : sk.scores[m];
+  }
+
+  const allSkillsMonths = [];
+  (pillar.skills||[]).forEach(sk => months.forEach(m => {
+    const v = resolveScore(sk, m);
+    if (v) allSkillsMonths.push(v);
+  }));
+  const avg = allSkillsMonths.length ? allSkillsMonths.reduce((a,b)=>a+b,0)/allSkillsMonths.length : null;
   const ac = avg ? scoreColor(avg) : { bg:'var(--gray-100)', fg:'var(--gray-400)' };
+
+  function startEdit(sk, m) {
+    const key = `${pillar.name}|${sk.name}|${m}`;
+    setEditing(key);
+    setDraft(String(resolveScore(sk, m) || ''));
+  }
+
+  function commitEdit(sk, m) {
+    const val = parseFloat(draft);
+    if (!isNaN(val) && val >= 0 && val <= 5) {
+      onSave(member, pillar.name, sk.name, m, val);
+    }
+    setEditing(null);
+  }
 
   return (
     <div className="pf-pillar-card">
@@ -502,12 +545,28 @@ function PillarCard({ pillar, months, L }) {
           <div className="pf-skill-name">{sk.name}</div>
           <div className="pf-months">
             {months.map(m => {
-              const v = sk.scores[m];
+              const key = `${pillar.name}|${sk.name}|${m}`;
+              const v = resolveScore(sk, m);
+              const fromSb = sbScores[key] !== undefined;
               const c = scoreColor(v);
+              const isEdit = editing === key;
               return (
-                <span key={m} className="pf-month-pill" style={{background:c.bg,color:c.fg}}>
-                  <span className="mo">{MONTHS_LABEL[m]}</span>
-                  <span className="sc">{v ? v.toFixed(1) : '—'}</span>
+                <span key={m} className={`pf-month-pill${isEdit?' editing':''}`}
+                  style={{background:c.bg,color:c.fg}}
+                  onClick={() => !isEdit && startEdit(sk, m)}>
+                  {isEdit ? (
+                    <input className="pf-score-input" autoFocus
+                      value={draft} onChange={e => setDraft(e.target.value)}
+                      onBlur={() => commitEdit(sk, m)}
+                      onKeyDown={e => { if(e.key==='Enter') commitEdit(sk,m); if(e.key==='Escape') setEditing(null); }}
+                      style={{color:c.fg}} />
+                  ) : (
+                    <>
+                      <span className="mo">{MONTHS_LABEL[m]}</span>
+                      <span className="sc">{v ? v.toFixed(1) : '—'}</span>
+                      {fromSb && <span className="pf-sb-dot"></span>}
+                    </>
+                  )}
                 </span>
               );
             })}
@@ -519,7 +578,7 @@ function PillarCard({ pillar, months, L }) {
 }
 
 // ─── Member view (has data) ──────────────────────────────────────────────────
-function MemberView({ member, memberIdx, months, activeQ, L }) {
+function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L }) {
   const avg = overallAvg(member.pillars, months);
   const az = avg ? scoreColor(avg) : { solid:'var(--gray-300)', bg:'var(--gray-100)', fg:'var(--gray-500)' };
   const totalSkills = (member.pillars||[]).reduce((n,p)=>n+(p.skills||[]).length,0);
@@ -594,7 +653,8 @@ function MemberView({ member, memberIdx, months, activeQ, L }) {
 
       <div className="pf-pillar-grid">
         {(member.pillars||[]).map((p, i) => (
-          <PillarCard key={i} pillar={p} months={months} L={L} />
+          <PillarCard key={i} pillar={p} months={months}
+            member={member.id} sbScores={sbScores} onSave={onSave} L={L} />
         ))}
       </div>
     </>
@@ -632,6 +692,7 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [lang,     setLang]     = useState('es');
   const [activeQ,  setActiveQ]  = useState('Q3');
+  const [sbScores, setSbScores] = useState({});
 
   const L = o => o[lang];
 
@@ -651,7 +712,26 @@ function App() {
     }
   }
 
+  async function loadSbScores(memberName) {
+    const { data: rows } = await sb.from(SB_TABLE).select('*')
+      .eq('member', memberName).eq('year', 2025);
+    if (!rows) return;
+    const map = {};
+    rows.forEach(r => { map[`${r.pillar}|${r.skill}|${r.month}`] = r.score; });
+    setSbScores(map);
+  }
+
+  async function saveScore(member, pillar, skill, month, score) {
+    await sb.from(SB_TABLE).upsert(
+      { member, pillar, skill, month, year: 2025, score },
+      { onConflict: 'member,pillar,skill,month,year' }
+    );
+    const key = `${pillar}|${skill}|${month}`;
+    setSbScores(prev => ({ ...prev, [key]: score }));
+  }
+
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => { if (selected) { setSbScores({}); loadSbScores(selected); } }, [selected]);
 
   const activeMonths = QUARTERS.find(q => q.id === activeQ)?.months || [];
   const members = data ? Object.entries(data).map(([id, v]) => ({ id, ...v })) : [];
@@ -711,7 +791,7 @@ function App() {
         {!loading && !error && member && (
           <div className="pf-content">
             {hasPillarData
-              ? <MemberView member={member} memberIdx={memberIdx} months={activeMonths} activeQ={activeQ} L={L} />
+              ? <MemberView member={member} memberIdx={memberIdx} months={activeMonths} activeQ={activeQ} sbScores={sbScores} onSave={saveScore} L={L} />
               : <PendingView member={member} memberIdx={memberIdx} activeQ={activeQ} L={L} />
             }
           </div>
