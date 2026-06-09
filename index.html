@@ -92,6 +92,13 @@ textarea,input{font-family:inherit}
   text-align:left;transition:background 120ms;width:100%}
 .pf-member:hover{background:rgba(255,255,255,0.05)}
 .pf-member.active{background:rgba(255,255,255,0.09)}
+.pf-avatar-photo{border-radius:50%;object-fit:cover;flex:none;width:30px;height:30px;
+  filter:sepia(0.25) saturate(1.3) brightness(0.88) contrast(1.05);
+  border:1.5px solid transparent}
+.pf-member.active .pf-avatar-photo{border-color:rgba(255,255,255,0.28)}
+.pf-hero-avatar-photo{width:60px;height:60px;border-radius:16px;flex:none;object-fit:cover;
+  filter:sepia(0.25) saturate(1.3) brightness(0.88) contrast(1.05);
+  box-shadow:inset 0 -1px 2px rgba(255,255,255,0.3)}
 .pf-avatar{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
   color:#fff;font-weight:600;flex:none;width:30px;height:30px;font-size:11px;
   border:1.5px solid transparent}
@@ -284,6 +291,25 @@ const MONTHS_ORDER   = ['April','May','Jun','Jul','Aug','Sept','Oct'];
 const MONTHS_LABEL   = { April:'Apr', May:'May', Jun:'Jun', Jul:'Jul', Aug:'Aug', Sept:'Sep', Oct:'Oct' };
 const ALERT_THRESHOLD = 3.0;
 
+const ROLE_MAP = {
+  'Agustin Barrozo':      'List Builder',
+  'Maria Juliana Segura': 'List Builder',
+  'Nicolas Valencia':     'Campaign Manager',
+  'Paula Rodriguez':      'Campaign Manager',
+  'Agostina Trezza':      'Campaign Manager',
+  'Aurora Torres':        'Campaign Manager',
+};
+
+const STORAGE = 'https://uwftcnjtvwjlufjyyyfh.supabase.co/storage/v1/object/public/photos';
+const MEMBER_PHOTOS = {
+  'Agustin Barrozo':      `${STORAGE}/agustin.jpg`,
+  'Maria Juliana Segura': `${STORAGE}/juliana.jpg`,
+  'Nicolas Valencia':     `${STORAGE}/nicolas.jpg`,
+  'Paula Rodriguez':      `${STORAGE}/paula.jpg`,
+  'Agostina Trezza':      `${STORAGE}/agostina.jpg`,
+  'Aurora Torres':        `${STORAGE}/aurora.jpg`,
+};
+
 const QUARTERS = [
   { id: 'Q2', label: 'Q2', months: ['April','May','Jun'] },
   { id: 'Q3', label: 'Q3', months: ['Jul','Aug','Sept'] },
@@ -335,6 +361,16 @@ function overallAvg(pillars, months) {
   });
   if (!vals.length) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function getMemberRole(memberId) {
+  const displayName = memberId.replace(/\s*[-–]\s*.*$/, '');
+  return ROLE_MAP[displayName] || memberId.match(/[-–]\s*(.+)$/)?.[1]?.trim() || '';
+}
+
+function getMemberPhoto(memberId) {
+  const displayName = memberId.replace(/\s*[-–]\s*.*$/, '');
+  return MEMBER_PHOTOS[displayName] || null;
 }
 
 function getInitials(name) {
@@ -414,12 +450,13 @@ function Sidebar({ members, selected, onSelect, activeQ, onQChange, activeMonths
           return (
             <button key={m.id} className={`pf-member ${selected===m.id?'active':''}`}
               onClick={() => onSelect(m.id)}>
-              <span className="pf-avatar" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>
-                {getInitials(m.id)}
-              </span>
+              {getMemberPhoto(m.id)
+                ? <img src={getMemberPhoto(m.id)} className="pf-avatar-photo" alt={m.id} />
+                : <span className="pf-avatar" style={{background:AVATAR_COLORS[i%AVATAR_COLORS.length]}}>{getInitials(m.id)}</span>
+              }
               <span className="pf-member-text">
                 <span className="pf-member-name">{m.id.replace(/\s*[-–]\s*.*$/,'')}</span>
-                <span className="pf-member-role">{m.role}</span>
+                <span className="pf-member-role">{getMemberRole(m.id)}</span>
               </span>
               {avg
                 ? <span className="pf-member-score" style={{color:sc.fg,background:sc.bg}}>{avg.toFixed(1)}</span>
@@ -589,13 +626,14 @@ function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L })
     <>
       <div className="pf-hero">
         <div className="pf-hero-profile">
-          <div className="pf-hero-avatar" style={{background:`linear-gradient(150deg,${color},${color}cc)`}}>
-            {getInitials(member.id)}
-          </div>
+          {getMemberPhoto(member.id)
+            ? <img src={getMemberPhoto(member.id)} className="pf-hero-avatar-photo" alt={displayName} />
+            : <div className="pf-hero-avatar" style={{background:`linear-gradient(150deg,${color},${color}cc)`}}>{getInitials(member.id)}</div>
+          }
           <div>
             <div className="pf-hero-name">{displayName}</div>
             <div className="pf-hero-meta">
-              <span className="pf-chip"><i className="ri-briefcase-2-line"></i>{member.role}</span>
+              <span className="pf-chip"><i className="ri-briefcase-2-line"></i>{getMemberRole(member.id)}</span>
               <span className="pf-chip"><i className="ri-calendar-event-line"></i>{activeQ} 2025</span>
             </div>
           </div>
