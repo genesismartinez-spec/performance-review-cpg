@@ -420,7 +420,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
 
     statPairs.forEach(([status, colId]) => {
       const date = parseMondayDate(cols[colId]?.value, cols[colId]?.text);
-      if (!date || date.getFullYear() !== 2025) return;
+      if (!date || date.getFullYear() !== 2026) return;
       const mo = getMonthAbbr(date);
       if (!mo) return;
       if (!counts[mo]) counts[mo] = {};
@@ -894,7 +894,7 @@ function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L })
             <div className="pf-hero-name">{displayName}</div>
             <div className="pf-hero-meta">
               <span className="pf-chip"><i className="ri-briefcase-2-line"></i>{getMemberRole(member.id)}</span>
-              <span className="pf-chip"><i className="ri-calendar-event-line"></i>{activeQ} 2025</span>
+              <span className="pf-chip"><i className="ri-calendar-event-line"></i>{activeQ} 2026</span>
             </div>
           </div>
         </div>
@@ -940,7 +940,7 @@ function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L })
               <i className="ri-calendar-check-line"></i>
             </div>
             <div>
-              <div className="pf-mini-num">{activeQ} 2025</div>
+              <div className="pf-mini-num">{activeQ} 2026</div>
               <div className="pf-mini-lab">{L({es:'período',en:'period'})}</div>
             </div>
           </div>
@@ -973,7 +973,7 @@ function PendingView({ member, memberIdx, activeQ, L }) {
       <div className="pf-pending-card">
         <i className="ri-draft-line"></i>
         <div className="pf-pending-card-title">
-          {L({es:`Sin data para ${activeQ} 2025`,en:`No data for ${activeQ} 2025`})}
+          {L({es:`Sin data para ${activeQ} 2026`,en:`No data for ${activeQ} 2026`})}
         </div>
         <div className="pf-pending-card-body">
           {L({es:'Agrega los scores en el Google Sheet y se reflejarán aquí automáticamente.',
@@ -1014,7 +1014,7 @@ function App() {
 
   async function loadSbScores(memberName) {
     const { data: rows } = await sb.from(SB_TABLE).select('*')
-      .eq('member', memberName).eq('year', 2025);
+      .eq('member', memberName).eq('year', 2026);
     if (!rows) return;
     const map = {};
     rows.forEach(r => { map[`${r.pillar}|${r.skill}|${r.month}`] = r.score; });
@@ -1023,7 +1023,7 @@ function App() {
 
   async function saveScore(member, pillar, skill, month, score) {
     await sb.from(SB_TABLE).upsert(
-      { member, pillar, skill, month, year: 2025, score },
+      { member, pillar, skill, month, year: 2026, score },
       { onConflict: 'member,pillar,skill,month,year' }
     );
     const key = `${pillar}|${skill}|${month}`;
