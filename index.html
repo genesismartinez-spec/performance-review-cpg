@@ -419,7 +419,9 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
     });
 
     statPairs.forEach(([status, colId]) => {
-      const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
+      const date = parseMondayDate(cols[colId]?.value, cols[colId]?.text);
+      if (!date || date.getFullYear() !== 2025) return;
+      const mo = getMonthAbbr(date);
       if (!mo) return;
       if (!counts[mo]) counts[mo] = {};
       counts[mo][status] = (counts[mo][status] || 0) + 1;
@@ -473,11 +475,9 @@ const AVATAR_COLORS = [
 
 function scoreColor(s) {
   if (!s || s === 0) return { bg:'var(--gray-100)', fg:'var(--gray-500)' };
-  if (s < 2.5)        return { bg:'var(--red-50)',    fg:'var(--red-700)',    solid:'var(--red-500)' };
-  if (s < 3.0)        return { bg:'var(--orange-50)', fg:'var(--orange-700)', solid:'var(--orange-500)' };
-  if (s < 3.5)        return { bg:'var(--yellow-50)', fg:'var(--yellow-800)', solid:'var(--yellow-500)' };
-  if (s < 4.2)        return { bg:'var(--green-50)',  fg:'var(--green-700)',  solid:'var(--green-500)' };
-  return               { bg:'var(--green-100)', fg:'var(--green-800)',  solid:'var(--green-600)' };
+  if (s < 3.0)  return { bg:'var(--red-50)',    fg:'var(--red-700)',    solid:'var(--red-500)' };
+  if (s < 3.9)  return { bg:'var(--yellow-50)', fg:'var(--yellow-800)', solid:'var(--yellow-500)' };
+  return         { bg:'var(--green-50)',  fg:'var(--green-700)',  solid:'var(--green-500)' };
 }
 
 function pillarAvg(pillar, months) {
