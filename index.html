@@ -375,89 +375,48 @@ function getMonthAbbr(date) {
 }
 
 async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
-  // 1. Get all users to map person id → name
-  const usersRes = await mondayQuery(`{ users(kind: non_guests) { id name } }`);
-  const userMap = {};
-  (usersRes?.data?.users || []).forEach(u => {
-    userMap[String(u.id)] = u.name;
-  });
+  const counts = {};
+  // Match by first name OR last name against the text field of the person column
+  const nameParts = memberDisplayName.toLowerCase().split(' ').filter(Boolean);
 
-  // 2. Find which Monday user ID(s) match this member
-  const matchIds = new Set();
-  Object.entries(userMap).forEach(([id, name]) => {
-    if (name.toLowerCase().includes(memberDisplayName.split(' ')[0].toLowerCase()) ||
-        memberDisplayName.toLowerCase().includes(name.split(' ')[0].toLowerCase())) {
-      matchIds.add(id);
-    }
-  });
-
-  const counts = {}; // { month: { status: n } }
-
-  if (isListBuilder) {
-    const boardRes = await mondayQuery(`{
-      boards(ids: [${PROPOSALS_BOARD}]) {
-        items_page(limit: 500) {
-          items {
-            column_values(ids: ["${LB_COLS.building}","${LB_COLS.approved}","${LB_COLS.declined}","${LB_COLS.person}"]) {
-              id value text
-            }
-          }
-        }
-      }
-    }`);
-    const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
-    items.forEach(item => {
-      const cols = {};
-      item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
-      let belongsTo = false;
-      try {
-        const persons = JSON.parse(cols[LB_COLS.person]?.value || '{}');
-        (persons.personsAndTeams || []).forEach(p => {
-          if (matchIds.has(String(p.id))) belongsTo = true;
-        });
-      } catch {}
-      if (!belongsTo) return;
-
-      [['building', LB_COLS.building], ['approved', LB_COLS.approved], ['declined', LB_COLS.declined]].forEach(([status, colId]) => {
-        const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
-        if (!mo) return;
-        if (!counts[mo]) counts[mo] = {};
-        counts[mo][status] = (counts[mo][status] || 0) + 1;
-      });
-    });
-  } else {
-    const boardRes = await mondayQuery(`{
-      boards(ids: [${EXECUTION_BOARD}]) {
-        items_page(limit: 500) {
-          items {
-            column_values(ids: ["${CM_COLS.ongoing}","${CM_COLS.completed}","${CM_COLS.person}"]) {
-              id value text
-            }
-          }
-        }
-      }
-    }`);
-    const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
-    items.forEach(item => {
-      const cols = {};
-      item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
-      let belongsTo = false;
-      try {
-        const persons = JSON.parse(cols[CM_COLS.person]?.value || '{}');
-        (persons.personsAndTeams || []).forEach(p => {
-          if (matchIds.has(String(p.id))) belongsTo = true;
-        });
-      } catch {}
-      if (!belongsTo) return;
-
-      [['ongoing', CM_COLS.ongoing], ['completed', CM_COLS.completed]].forEach(([status, colId]) => {
-        const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
-        if (!mo) return;
-        if (!counts[mo]) counts[mo] = {};
-        counts[mo][status] = (counts[mo][status] || 0) + 1;
-      });
-    });
+  function personMatches(personText) {
+    const t = (personText || '').toLowerCase();
+    return nameParts.some(part => part.length > 2 && t.includes(part));
   }
+
+  const personCol = isListBuilder ? LB_COLS.person : CM_COLS.person;
+  const boardId   = isListBuilder ? PROPOSALS_BOARD : EXECUTION_BOARD;
+  const statPairs = isListBuilder
+    ? [['building', LB_COLS.building], ['approved', LB_COLS.approved], ['declined', LB_COLS.declined]]
+    : [['ongoing', CM_COLS.ongoing], ['completed', CM_COLS.completed]];
+  const colIds = [personCol, ...statPairs.map(([,id]) => id)];
+
+  const boardRes = await mondayQuery(`{
+    boards(ids: [${boardId}]) {
+      items_page(limit: 500) {
+        items {
+          column_values(ids: ${JSON.stringify(colIds)}) {
+            id value text
+          }
+        }
+      }
+    }
+  }`);
+
+  const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
+  items.forEach(item => {
+    const cols = {};
+    item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
+
+    if (!personMatches(cols[personCol]?.text)) return;
+
+    statPairs.forEach(([status, colId]) => {
+      const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
+      if (!mo) return;
+      if (!counts[mo]) counts[mo] = {};
+      counts[mo][status] = (counts[mo][status] || 0) + 1;
+    });
+  });
 
   return counts;
 }
@@ -802,6 +761,7 @@ function PillarCard({ pillar, months, member, sbScores, onSave, L }) {
 function WorkloadChart({ memberId, activeMonths, L }) {
   const [wl,      setWl]      = useState(null);
   const [loading, setLoading] = useState(true);
+  const [err,     setErr]     = useState(null);
 
   const displayName = memberId.replace(/\s*[-–]\s*.*$/, '');
   const role = ROLE_MAP[displayName] || '';
@@ -819,10 +779,10 @@ function WorkloadChart({ memberId, activeMonths, L }) {
       ];
 
   useEffect(() => {
-    setLoading(true);
+    setLoading(true); setErr(null);
     fetchMondayWorkload(displayName, isLB)
       .then(data => { setWl(data); setLoading(false); })
-      .catch(() => { setWl({}); setLoading(false); });
+      .catch(e => { setErr(e.message || 'Error connecting to Monday'); setWl({}); setLoading(false); });
   }, [memberId]);
 
   const maxVal = Math.max(1, ...activeMonths.flatMap(mo =>
@@ -849,9 +809,15 @@ function WorkloadChart({ memberId, activeMonths, L }) {
         </div>
       </div>
 
-      {loading ? (
+      {err && (
+        <div className="pf-chart-empty" style={{color:'var(--red-500)',fontSize:12,flexDirection:'column',gap:4}}>
+          <i className="ri-error-warning-line" style={{fontSize:20}}></i>
+          {err}
+        </div>
+      )}
+      {!err && loading ? (
         <div className="pf-chart-empty"><div className="pf-spinner" style={{width:24,height:24,borderWidth:2}}></div></div>
-      ) : (
+      ) : !err && (
         <div className="pf-chart">
           {activeMonths.map(mo => (
             <div key={mo} className="pf-chart-group">
