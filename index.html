@@ -351,11 +351,20 @@ async function mondayQuery(query) {
   return res.json();
 }
 
-function parseMondayDate(val) {
+function parseMondayDate(val, text) {
+  // text field: plain "YYYY-MM-DD" — most reliable, no timezone issues
+  if (text && /^\d{4}-\d{2}-\d{2}$/.test(text.trim())) {
+    const [y, m, d] = text.trim().split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // val field: JSON {"date":"YYYY-MM-DD","time":""}
   if (!val) return null;
   try {
-    const d = JSON.parse(val);
-    if (d.date) return new Date(d.date);
+    const parsed = JSON.parse(val);
+    if (parsed && parsed.date) {
+      const [y, m, d] = parsed.date.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
   } catch {}
   return null;
 }
@@ -390,7 +399,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
         items_page(limit: 500) {
           items {
             column_values(ids: ["${LB_COLS.building}","${LB_COLS.approved}","${LB_COLS.declined}","${LB_COLS.person}"]) {
-              id value
+              id value text
             }
           }
         }
@@ -399,11 +408,10 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
     const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
     items.forEach(item => {
       const cols = {};
-      item.column_values.forEach(c => { cols[c.id] = c.value; });
-      // Check if this item belongs to the member
+      item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
       let belongsTo = false;
       try {
-        const persons = JSON.parse(cols[LB_COLS.person] || '{}');
+        const persons = JSON.parse(cols[LB_COLS.person]?.value || '{}');
         (persons.personsAndTeams || []).forEach(p => {
           if (matchIds.has(String(p.id))) belongsTo = true;
         });
@@ -411,7 +419,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
       if (!belongsTo) return;
 
       [['building', LB_COLS.building], ['approved', LB_COLS.approved], ['declined', LB_COLS.declined]].forEach(([status, colId]) => {
-        const mo = getMonthAbbr(parseMondayDate(cols[colId]));
+        const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
         if (!mo) return;
         if (!counts[mo]) counts[mo] = {};
         counts[mo][status] = (counts[mo][status] || 0) + 1;
@@ -423,7 +431,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
         items_page(limit: 500) {
           items {
             column_values(ids: ["${CM_COLS.ongoing}","${CM_COLS.completed}","${CM_COLS.person}"]) {
-              id value
+              id value text
             }
           }
         }
@@ -432,10 +440,10 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
     const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
     items.forEach(item => {
       const cols = {};
-      item.column_values.forEach(c => { cols[c.id] = c.value; });
+      item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
       let belongsTo = false;
       try {
-        const persons = JSON.parse(cols[CM_COLS.person] || '{}');
+        const persons = JSON.parse(cols[CM_COLS.person]?.value || '{}');
         (persons.personsAndTeams || []).forEach(p => {
           if (matchIds.has(String(p.id))) belongsTo = true;
         });
@@ -443,7 +451,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
       if (!belongsTo) return;
 
       [['ongoing', CM_COLS.ongoing], ['completed', CM_COLS.completed]].forEach(([status, colId]) => {
-        const mo = getMonthAbbr(parseMondayDate(cols[colId]));
+        const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
         if (!mo) return;
         if (!counts[mo]) counts[mo] = {};
         counts[mo][status] = (counts[mo][status] || 0) + 1;
@@ -828,8 +836,8 @@ function WorkloadChart({ memberId, activeMonths, L }) {
           <i className="ri-bar-chart-2-line"></i>
         </div>
         <div>
-          <div className="pf-workload-title">{L({es:'Carga de trabajo',en:'Workload'})}</div>
-          <div className="pf-workload-sub">{L({es:'Campañas por mes en Monday',en:'Campaigns per month in Monday'})}</div>
+          <div className="pf-workload-title">Campaigns workflow</div>
+          <div className="pf-workload-sub">{L({es:'Campañas por mes · Monday',en:'Campaigns per month · Monday'})}</div>
         </div>
         <div className="pf-wl-legend">
           {statuses.map(s => (
