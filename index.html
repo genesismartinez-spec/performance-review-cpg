@@ -62,6 +62,8 @@ textarea,input{font-family:inherit}
   background:linear-gradient(150deg,var(--orange-400),var(--orange-600));
   display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;
   box-shadow:0 0 0 1px rgba(255,255,255,0.08),inset 0 -1px 1px rgba(255,255,255,0.3)}
+.pf-brand-tile-img{width:38px;height:38px;border-radius:11px;flex:none;object-fit:cover;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.08)}
 .pf-brand-text{flex:1;min-width:0}
 .pf-brand-name{font-size:15px;font-weight:600;letter-spacing:-0.01em}
 .pf-brand-sub{font-size:11px;color:var(--slate-500);margin-top:1px}
@@ -118,6 +120,7 @@ textarea,input{font-family:inherit}
 .pf-user-avatar{width:32px;height:32px;border-radius:50%;background:var(--gray-700);
   display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;
   font-weight:600;flex:none}
+.pf-user-avatar-photo{width:32px;height:32px;border-radius:50%;object-fit:cover;flex:none}
 .pf-user-text{flex:1;min-width:0}
 .pf-user-name{font-size:13px;font-weight:600;color:#fff}
 .pf-user-role{font-size:11px;color:var(--slate-500)}
@@ -418,7 +421,7 @@ function Sidebar({ members, selected, onSelect, activeQ, onQChange, activeMonths
   return (
     <aside className="pf-sidebar">
       <div className="pf-brand">
-        <div className="pf-brand-tile"><i className="ri-sparkling-2-fill"></i></div>
+        <img src={`${PHOTOS}/orbyt.jpg`} className="pf-brand-tile-img" alt="Influur" />
         <div className="pf-brand-text">
           <div className="pf-brand-name">Influur</div>
           <div className="pf-brand-sub">CPG &amp; Others</div>
@@ -471,7 +474,7 @@ function Sidebar({ members, selected, onSelect, activeQ, onQChange, activeMonths
       <div className="pf-spacer"></div>
 
       <div className="pf-user">
-        <div className="pf-user-avatar">GM</div>
+        <img src={`${PHOTOS}/genesis.png`} className="pf-user-avatar-photo" alt="Genesis Martinez" />
         <div className="pf-user-text">
           <div className="pf-user-name">Genesis Martinez</div>
           <div className="pf-user-role">Coordinator</div>
