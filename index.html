@@ -260,6 +260,27 @@ textarea,input{font-family:inherit}
 .pf-pending-card-title{font-size:15px;font-weight:600}
 .pf-pending-card-body{font-size:13px;color:var(--text-sub-600);margin-top:7px;line-height:1.55}
 
+/* ── Workload chart ── */
+.pf-workload{background:var(--bg-white-0);border:1px solid var(--stroke-soft-200);
+  border-radius:16px;box-shadow:var(--shadow-xs);padding:22px 26px}
+.pf-workload-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.pf-workload-title{font-size:15px;font-weight:600}
+.pf-workload-sub{font-size:12px;color:var(--text-soft-400);margin-top:2px}
+.pf-wl-legend{display:flex;gap:14px;margin-left:auto;flex-wrap:wrap}
+.pf-wl-legend-item{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text-sub-600)}
+.pf-wl-legend-dot{width:8px;height:8px;border-radius:2px;flex:none}
+.pf-chart{display:flex;align-items:flex-end;gap:16px;height:140px;padding-top:8px}
+.pf-chart-group{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1}
+.pf-chart-bars{display:flex;align-items:flex-end;gap:3px;height:110px;width:100%}
+.pf-chart-bar{flex:1;border-radius:4px 4px 0 0;min-height:3px;transition:height 500ms cubic-bezier(.4,0,.2,1);
+  cursor:default;position:relative}
+.pf-chart-bar:hover::after{content:attr(data-val);position:absolute;top:-22px;left:50%;
+  transform:translateX(-50%);background:var(--gray-900);color:#fff;font-size:10px;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:none}
+.pf-chart-mo{font-size:11px;color:var(--text-soft-400);font-weight:500}
+.pf-chart-empty{display:flex;align-items:center;justify-content:center;height:110px;
+  color:var(--text-disabled-300);font-size:13px}
+
 /* ── Editable score pills ── */
 .pf-month-pill{cursor:pointer;transition:opacity 120ms,outline 120ms}
 .pf-month-pill:hover{opacity:0.82;outline:2px solid var(--primary-base);outline-offset:1px}
@@ -293,6 +314,146 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const MONTHS_ORDER   = ['April','May','Jun','Jul','Aug','Sept','Oct'];
 const MONTHS_LABEL   = { April:'Apr', May:'May', Jun:'Jun', Jul:'Jul', Aug:'Aug', Sept:'Sep', Oct:'Oct' };
 const ALERT_THRESHOLD = 3.0;
+
+// ─── Monday.com config ───────────────────────────────────────────────────────
+const MONDAY_TOKEN     = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYyMzEyODkyNSwiYWFpIjoxMSwidWlkIjo2NTcxODAwNiwiaWFkIjoiMjAyNi0wMi0xOVQwMjoxODo1OS4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTM2Mzk5MzgsInJnbiI6InVzZTEifQ.17htbvxgY5bBj7M7AEeErfqEwnfORnal-3w_VaCK204';
+const PROPOSALS_BOARD  = '8981347315';
+const EXECUTION_BOARD  = '8981349237';
+// List Builder columns
+const LB_COLS = {
+  building: 'date_mkq8awe5',
+  approved: 'date_mkyh9aae',
+  declined: 'date_mm0vpgt2',
+  person:   'multiple_person_mkq0bz01',
+};
+// Campaign Manager columns
+const CM_COLS = {
+  ongoing:   'date_mkq842b3',
+  completed: 'date_mkq8z8k7',
+  person:    'multiple_person_mkq0gpaw',
+};
+
+const MONTH_ABBR_TO_NUM = {
+  April:4, May:5, Jun:6, Jul:7, Aug:8, Sept:9, Oct:10
+};
+const NUM_TO_ABBR = {4:'April',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sept',10:'Oct'};
+
+async function mondayQuery(query) {
+  const res = await fetch('https://api.monday.com/v2', {
+    method: 'POST',
+    headers: {
+      'Authorization': MONDAY_TOKEN,
+      'Content-Type': 'application/json',
+      'API-Version': '2024-01',
+    },
+    body: JSON.stringify({ query }),
+  });
+  return res.json();
+}
+
+function parseMondayDate(val) {
+  if (!val) return null;
+  try {
+    const d = JSON.parse(val);
+    if (d.date) return new Date(d.date);
+  } catch {}
+  return null;
+}
+
+function getMonthAbbr(date) {
+  if (!date) return null;
+  return NUM_TO_ABBR[date.getMonth() + 1] || null;
+}
+
+async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
+  // 1. Get all users to map person id → name
+  const usersRes = await mondayQuery(`{ users(kind: non_guests) { id name } }`);
+  const userMap = {};
+  (usersRes?.data?.users || []).forEach(u => {
+    userMap[String(u.id)] = u.name;
+  });
+
+  // 2. Find which Monday user ID(s) match this member
+  const matchIds = new Set();
+  Object.entries(userMap).forEach(([id, name]) => {
+    if (name.toLowerCase().includes(memberDisplayName.split(' ')[0].toLowerCase()) ||
+        memberDisplayName.toLowerCase().includes(name.split(' ')[0].toLowerCase())) {
+      matchIds.add(id);
+    }
+  });
+
+  const counts = {}; // { month: { status: n } }
+
+  if (isListBuilder) {
+    const boardRes = await mondayQuery(`{
+      boards(ids: [${PROPOSALS_BOARD}]) {
+        items_page(limit: 500) {
+          items {
+            column_values(ids: ["${LB_COLS.building}","${LB_COLS.approved}","${LB_COLS.declined}","${LB_COLS.person}"]) {
+              id value
+            }
+          }
+        }
+      }
+    }`);
+    const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
+    items.forEach(item => {
+      const cols = {};
+      item.column_values.forEach(c => { cols[c.id] = c.value; });
+      // Check if this item belongs to the member
+      let belongsTo = false;
+      try {
+        const persons = JSON.parse(cols[LB_COLS.person] || '{}');
+        (persons.personsAndTeams || []).forEach(p => {
+          if (matchIds.has(String(p.id))) belongsTo = true;
+        });
+      } catch {}
+      if (!belongsTo) return;
+
+      [['building', LB_COLS.building], ['approved', LB_COLS.approved], ['declined', LB_COLS.declined]].forEach(([status, colId]) => {
+        const mo = getMonthAbbr(parseMondayDate(cols[colId]));
+        if (!mo) return;
+        if (!counts[mo]) counts[mo] = {};
+        counts[mo][status] = (counts[mo][status] || 0) + 1;
+      });
+    });
+  } else {
+    const boardRes = await mondayQuery(`{
+      boards(ids: [${EXECUTION_BOARD}]) {
+        items_page(limit: 500) {
+          items {
+            column_values(ids: ["${CM_COLS.ongoing}","${CM_COLS.completed}","${CM_COLS.person}"]) {
+              id value
+            }
+          }
+        }
+      }
+    }`);
+    const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
+    items.forEach(item => {
+      const cols = {};
+      item.column_values.forEach(c => { cols[c.id] = c.value; });
+      let belongsTo = false;
+      try {
+        const persons = JSON.parse(cols[CM_COLS.person] || '{}');
+        (persons.personsAndTeams || []).forEach(p => {
+          if (matchIds.has(String(p.id))) belongsTo = true;
+        });
+      } catch {}
+      if (!belongsTo) return;
+
+      [['ongoing', CM_COLS.ongoing], ['completed', CM_COLS.completed]].forEach(([status, colId]) => {
+        const mo = getMonthAbbr(parseMondayDate(cols[colId]));
+        if (!mo) return;
+        if (!counts[mo]) counts[mo] = {};
+        counts[mo][status] = (counts[mo][status] || 0) + 1;
+      });
+    });
+  }
+
+  return counts;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const ROLE_MAP = {
   'Agustin Barrozo':      'List Builder',
@@ -620,6 +781,83 @@ function PillarCard({ pillar, months, member, sbScores, onSave, L }) {
   );
 }
 
+// ─── Workload chart ──────────────────────────────────────────────────────────
+function WorkloadChart({ memberId, activeMonths, L }) {
+  const [wl,      setWl]      = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const displayName = memberId.replace(/\s*[-–]\s*.*$/, '');
+  const role = ROLE_MAP[displayName] || '';
+  const isLB = role === 'List Builder';
+
+  const statuses = isLB
+    ? [
+        { key:'building',  label: L({es:'Building',   en:'Building'}),  color:'var(--sky-500)' },
+        { key:'approved',  label: L({es:'Approved',   en:'Approved'}),  color:'var(--green-500)' },
+        { key:'declined',  label: L({es:'Declined',   en:'Declined'}),  color:'var(--red-500)' },
+      ]
+    : [
+        { key:'ongoing',   label: L({es:'Ongoing',    en:'Ongoing'}),   color:'var(--orange-500)' },
+        { key:'completed', label: L({es:'Completed',  en:'Completed'}), color:'var(--green-500)' },
+      ];
+
+  useEffect(() => {
+    setLoading(true);
+    fetchMondayWorkload(displayName, isLB)
+      .then(data => { setWl(data); setLoading(false); })
+      .catch(() => { setWl({}); setLoading(false); });
+  }, [memberId]);
+
+  const maxVal = Math.max(1, ...activeMonths.flatMap(mo =>
+    statuses.map(s => wl?.[mo]?.[s.key] || 0)
+  ));
+
+  return (
+    <div className="pf-workload">
+      <div className="pf-workload-head">
+        <div className="ico" style={{background:'var(--orange-100)',color:'var(--orange-700)'}}>
+          <i className="ri-bar-chart-2-line"></i>
+        </div>
+        <div>
+          <div className="pf-workload-title">{L({es:'Carga de trabajo',en:'Workload'})}</div>
+          <div className="pf-workload-sub">{L({es:'Campañas por mes en Monday',en:'Campaigns per month in Monday'})}</div>
+        </div>
+        <div className="pf-wl-legend">
+          {statuses.map(s => (
+            <div key={s.key} className="pf-wl-legend-item">
+              <div className="pf-wl-legend-dot" style={{background:s.color}}></div>
+              {s.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="pf-chart-empty"><div className="pf-spinner" style={{width:24,height:24,borderWidth:2}}></div></div>
+      ) : (
+        <div className="pf-chart">
+          {activeMonths.map(mo => (
+            <div key={mo} className="pf-chart-group">
+              <div className="pf-chart-bars">
+                {statuses.map(s => {
+                  const val = wl?.[mo]?.[s.key] || 0;
+                  const h = val === 0 ? 3 : Math.round((val / maxVal) * 100);
+                  return (
+                    <div key={s.key} className="pf-chart-bar"
+                      style={{background: val ? s.color : 'var(--gray-100)', height:`${h}%`}}
+                      data-val={val} />
+                  );
+                })}
+              </div>
+              <div className="pf-chart-mo">{MONTHS_LABEL[mo]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Member view (has data) ──────────────────────────────────────────────────
 function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L }) {
   const avg = overallAvg(member.pillars, months);
@@ -701,6 +939,8 @@ function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L })
             member={member.id} sbScores={sbScores} onSave={onSave} L={L} />
         ))}
       </div>
+
+      <WorkloadChart memberId={member.id} activeMonths={months} L={L} />
     </>
   );
 }
