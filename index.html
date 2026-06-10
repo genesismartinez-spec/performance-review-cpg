@@ -376,7 +376,6 @@ function getMonthAbbr(date) {
 
 async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
   const counts = {};
-  // Match by first name OR last name against the text field of the person column
   const nameParts = memberDisplayName.toLowerCase().split(' ').filter(Boolean);
 
   function personMatches(personText) {
@@ -395,6 +394,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
     boards(ids: [${boardId}]) {
       items_page(limit: 500) {
         items {
+          name
           column_values(ids: ${JSON.stringify(colIds)}) {
             id value text
           }
@@ -404,11 +404,19 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
   }`);
 
   const items = boardRes?.data?.boards?.[0]?.items_page?.items || [];
+  const matched = [];
+
   items.forEach(item => {
     const cols = {};
     item.column_values.forEach(c => { cols[c.id] = { value: c.value, text: c.text }; });
 
     if (!personMatches(cols[personCol]?.text)) return;
+
+    matched.push({
+      name: item.name,
+      person: cols[personCol]?.text,
+      dates: Object.fromEntries(statPairs.map(([s, id]) => [s, { v: cols[id]?.value, t: cols[id]?.text }])),
+    });
 
     statPairs.forEach(([status, colId]) => {
       const mo = getMonthAbbr(parseMondayDate(cols[colId]?.value, cols[colId]?.text));
@@ -418,7 +426,7 @@ async function fetchMondayWorkload(memberDisplayName, isListBuilder) {
     });
   });
 
-  return counts;
+  return { counts, _debug: { total: items.length, matched } };
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -767,32 +775,37 @@ function WorkloadChart({ memberId, activeMonths, L }) {
   const role = ROLE_MAP[displayName] || '';
   const isLB = role === 'List Builder';
 
+  // Monday brand colors
   const statuses = isLB
     ? [
-        { key:'building',  label: L({es:'Building',   en:'Building'}),  color:'var(--sky-500)' },
-        { key:'approved',  label: L({es:'Approved',   en:'Approved'}),  color:'var(--green-500)' },
-        { key:'declined',  label: L({es:'Declined',   en:'Declined'}),  color:'var(--red-500)' },
+        { key:'building',  label:'Building',  color:'#FDAB3D' },
+        { key:'approved',  label:'Approved',  color:'#00C875' },
+        { key:'declined',  label:'Declined',  color:'#E2445C' },
       ]
     : [
-        { key:'ongoing',   label: L({es:'Ongoing',    en:'Ongoing'}),   color:'var(--orange-500)' },
-        { key:'completed', label: L({es:'Completed',  en:'Completed'}), color:'var(--green-500)' },
+        { key:'ongoing',   label:'Ongoing',   color:'#579BFC' },
+        { key:'completed', label:'Completed', color:'#00C875' },
       ];
 
   useEffect(() => {
     setLoading(true); setErr(null);
     fetchMondayWorkload(displayName, isLB)
-      .then(data => { setWl(data); setLoading(false); })
-      .catch(e => { setErr(e.message || 'Error connecting to Monday'); setWl({}); setLoading(false); });
+      .then(res => { setWl(res); setLoading(false); })
+      .catch(e => { setErr(e.message || 'Error connecting to Monday'); setWl(null); setLoading(false); });
   }, [memberId]);
 
+  const counts = wl?.counts || {};
+  const debug  = wl?._debug;
+  const [showDebug, setShowDebug] = useState(false);
+
   const maxVal = Math.max(1, ...activeMonths.flatMap(mo =>
-    statuses.map(s => wl?.[mo]?.[s.key] || 0)
+    statuses.map(s => counts[mo]?.[s.key] || 0)
   ));
 
   return (
     <div className="pf-workload">
       <div className="pf-workload-head">
-        <div className="ico" style={{background:'var(--orange-100)',color:'var(--orange-700)'}}>
+        <div className="ico" style={{background:'#fff3e0',color:'#FDAB3D'}}>
           <i className="ri-bar-chart-2-line"></i>
         </div>
         <div>
@@ -802,10 +815,16 @@ function WorkloadChart({ memberId, activeMonths, L }) {
         <div className="pf-wl-legend">
           {statuses.map(s => (
             <div key={s.key} className="pf-wl-legend-item">
-              <div className="pf-wl-legend-dot" style={{background:s.color}}></div>
+              <div className="pf-wl-legend-dot" style={{background:s.color,borderRadius:3}}></div>
               {s.label}
             </div>
           ))}
+          {debug && (
+            <button onClick={() => setShowDebug(o=>!o)}
+              style={{fontSize:10,color:'var(--text-soft-400)',marginLeft:4,textDecoration:'underline',background:'none',border:'none',cursor:'pointer'}}>
+              debug ({debug.matched.length}/{debug.total})
+            </button>
+          )}
         </div>
       </div>
 
@@ -815,27 +834,41 @@ function WorkloadChart({ memberId, activeMonths, L }) {
           {err}
         </div>
       )}
-      {!err && loading ? (
+      {!err && loading && (
         <div className="pf-chart-empty"><div className="pf-spinner" style={{width:24,height:24,borderWidth:2}}></div></div>
-      ) : !err && (
-        <div className="pf-chart">
-          {activeMonths.map(mo => (
-            <div key={mo} className="pf-chart-group">
-              <div className="pf-chart-bars">
-                {statuses.map(s => {
-                  const val = wl?.[mo]?.[s.key] || 0;
-                  const h = val === 0 ? 3 : Math.round((val / maxVal) * 100);
-                  return (
-                    <div key={s.key} className="pf-chart-bar"
-                      style={{background: val ? s.color : 'var(--gray-100)', height:`${h}%`}}
-                      data-val={val} />
-                  );
-                })}
+      )}
+      {!err && !loading && (
+        <>
+          <div className="pf-chart">
+            {activeMonths.map(mo => (
+              <div key={mo} className="pf-chart-group">
+                <div className="pf-chart-bars">
+                  {statuses.map(s => {
+                    const val = counts[mo]?.[s.key] || 0;
+                    const h = val === 0 ? 3 : Math.round((val / maxVal) * 100);
+                    return (
+                      <div key={s.key} className="pf-chart-bar"
+                        style={{background: val ? s.color : 'var(--gray-100)', height:`${h}%`}}
+                        data-val={`${s.label}: ${val}`} />
+                    );
+                  })}
+                </div>
+                <div className="pf-chart-mo">{MONTHS_LABEL[mo]}</div>
               </div>
-              <div className="pf-chart-mo">{MONTHS_LABEL[mo]}</div>
+            ))}
+          </div>
+          {showDebug && debug && (
+            <div style={{margin:'12px 0 4px',padding:'10px 14px',background:'var(--gray-50)',borderRadius:8,fontSize:11,fontFamily:'monospace',overflowX:'auto',maxHeight:200,overflowY:'auto',color:'var(--gray-700)'}}>
+              <b>Board items: {debug.total} total, {debug.matched.length} matched "{displayName}"</b>
+              {debug.matched.map((it, i) => (
+                <div key={i} style={{marginTop:6,borderTop:'1px solid var(--gray-200)',paddingTop:4}}>
+                  <b>{it.name}</b> · person: "{it.person}"
+                  <div>{JSON.stringify(it.dates)}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
