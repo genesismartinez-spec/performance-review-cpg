@@ -426,17 +426,14 @@ function Sidebar({ members, selected, onSelect, activeQ, onQChange, activeMonths
           <div className="pf-brand-name">Influur</div>
           <div className="pf-brand-sub">CPG &amp; Others</div>
         </div>
-        <i className="ri-expand-up-down-line pf-brand-chev"></i>
       </div>
 
-      <button className="pf-team">
-        <div className="pf-team-tile">CO</div>
+      <div className="pf-team">
         <div className="pf-team-text">
           <div className="pf-team-name">CPG & Others</div>
           <div className="pf-team-sub">{members.length} {L({es:'miembros',en:'members'})} · 2025</div>
         </div>
-        <i className="ri-expand-up-down-line pf-team-chev"></i>
-      </button>
+      </div>
 
       <div className="pf-q-tabs">
         {QUARTERS.map(q => (
@@ -582,7 +579,11 @@ function PillarCard({ pillar, months, member, sbScores, onSave, L }) {
         )}
       </div>
 
-      {(pillar.skills || []).map((sk, i) => (
+      {(pillar.skills || []).filter(sk => {
+        const n = sk.name.toLowerCase();
+        const t = title.toLowerCase();
+        return n !== t && !n.startsWith(t);
+      }).map((sk, i) => (
         <div className="pf-skill-row" key={i}>
           <div className="pf-skill-name">{sk.name}</div>
           <div className="pf-months">
@@ -695,7 +696,7 @@ function MemberView({ member, memberIdx, months, activeQ, sbScores, onSave, L })
       <AlertsPanel pillars={member.pillars} months={months} L={L} />
 
       <div className="pf-pillar-grid">
-        {(member.pillars||[]).map((p, i) => (
+        {(member.pillars||[]).filter(p => p.name.toLowerCase() !== 'role').map((p, i) => (
           <PillarCard key={i} pillar={p} months={months}
             member={member.id} sbScores={sbScores} onSave={onSave} L={L} />
         ))}
