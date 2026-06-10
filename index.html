@@ -645,6 +645,8 @@ function Sidebar({ members, selected, onSelect, activeQ, onQChange, activeMonths
 
 // ─── Alerts panel ────────────────────────────────────────────────────────────
 function AlertsPanel({ pillars, months, L }) {
+  const [open, setOpen] = useState(false);
+
   const alerts = [];
   (pillars || []).forEach(p => {
     (p.skills || []).forEach(sk => {
@@ -660,32 +662,39 @@ function AlertsPanel({ pillars, months, L }) {
 
   return (
     <div className="pf-alerts">
-      <div className="pf-alerts-head">
+      <button className="pf-alerts-head" onClick={() => setOpen(o => !o)}
+        style={{width:'100%',textAlign:'left',cursor:'pointer',border:0,background:'inherit',borderRadius:'inherit'}}>
         <div className="ico"><i className="ri-alert-line"></i></div>
-        <div>
+        <div style={{flex:1}}>
           <div className="pf-alerts-title">{L({es:'Áreas de atención',en:'Areas of attention'})}</div>
           <div className="pf-alerts-sub">
             {alerts.length} {L({es:'competencias por debajo de 3.0',en:'competencies below 3.0'})}
           </div>
         </div>
-      </div>
-      <div className="pf-alerts-list">
-        {alerts.map((a, i) => {
-          const c = scoreColor(a.score);
-          return (
-            <div className="pf-alert-row" key={i}>
-              <div className="pf-alert-dot" style={{background:c.solid||c.fg}}></div>
-              <div className="pf-alert-text">
-                <div className="pf-alert-skill">{a.skill}</div>
-                <div className="pf-alert-pillar">{parsePillarTitle(a.pillar).title}</div>
+        <i className="ri-arrow-down-s-line" style={{
+          color:'var(--red-500)',fontSize:18,transition:'transform 200ms',
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)'
+        }}></i>
+      </button>
+      {open && (
+        <div className="pf-alerts-list">
+          {alerts.map((a, i) => {
+            const c = scoreColor(a.score);
+            return (
+              <div className="pf-alert-row" key={i}>
+                <div className="pf-alert-dot" style={{background:c.solid||c.fg}}></div>
+                <div className="pf-alert-text">
+                  <div className="pf-alert-skill">{a.skill}</div>
+                  <div className="pf-alert-pillar">{parsePillarTitle(a.pillar).title}</div>
+                </div>
+                <div className="pf-alert-score" style={{background:c.bg,color:c.fg}}>
+                  {a.score.toFixed(1)}
+                </div>
               </div>
-              <div className="pf-alert-score" style={{background:c.bg,color:c.fg}}>
-                {a.score.toFixed(1)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
